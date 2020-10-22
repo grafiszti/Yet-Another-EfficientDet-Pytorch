@@ -27,16 +27,15 @@ class BBoxTransform(nn.Module):
         y_centers = regression[..., 0] * ha + y_centers_a
         x_centers = regression[..., 1] * wa + x_centers_a
 
-        ymin = y_centers - h / 2.
-        xmin = x_centers - w / 2.
-        ymax = y_centers + h / 2.
-        xmax = x_centers + w / 2.
+        ymin = y_centers - h / 2.0
+        xmin = x_centers - w / 2.0
+        ymax = y_centers + h / 2.0
+        xmax = x_centers + w / 2.0
 
         return torch.stack([xmin, ymin, xmax, ymax], dim=2)
 
 
 class ClipBoxes(nn.Module):
-
     def __init__(self):
         super(ClipBoxes, self).__init__()
 
@@ -57,7 +56,7 @@ class Anchors(nn.Module):
     adapted and modified from https://github.com/google/automl/blob/master/efficientdet/anchors.py by Zylo117
     """
 
-    def __init__(self, anchor_scale=4., pyramid_levels=None, **kwargs):
+    def __init__(self, anchor_scale=4.0, pyramid_levels=None, **kwargs):
         super().__init__()
         self.anchor_scale = anchor_scale
 
@@ -66,9 +65,11 @@ class Anchors(nn.Module):
         else:
             self.pyramid_levels = pyramid_levels
 
-        self.strides = kwargs.get('strides', [2 ** x for x in self.pyramid_levels])
-        self.scales = np.array(kwargs.get('scales', [2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)]))
-        self.ratios = kwargs.get('ratios', [(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)])
+        self.strides = kwargs.get("strides", [2 ** x for x in self.pyramid_levels])
+        self.scales = np.array(
+            kwargs.get("scales", [2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)])
+        )
+        self.ratios = kwargs.get("ratios", [(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)])
 
         self.last_anchors = {}
         self.last_shape = None
@@ -109,7 +110,7 @@ class Anchors(nn.Module):
             boxes_level = []
             for scale, ratio in itertools.product(self.scales, self.ratios):
                 if image_shape[1] % stride != 0:
-                    raise ValueError('input size must be divided by the stride.')
+                    raise ValueError("input size must be divided by the stride.")
                 base_anchor_size = self.anchor_scale * stride * scale
                 anchor_size_x_2 = base_anchor_size * ratio[0] / 2.0
                 anchor_size_y_2 = base_anchor_size * ratio[1] / 2.0
@@ -121,8 +122,14 @@ class Anchors(nn.Module):
                 yv = yv.reshape(-1)
 
                 # y1,x1,y2,x2
-                boxes = np.vstack((yv - anchor_size_y_2, xv - anchor_size_x_2,
-                                   yv + anchor_size_y_2, xv + anchor_size_x_2))
+                boxes = np.vstack(
+                    (
+                        yv - anchor_size_y_2,
+                        xv - anchor_size_x_2,
+                        yv + anchor_size_y_2,
+                        xv + anchor_size_x_2,
+                    )
+                )
                 boxes = np.swapaxes(boxes, 0, 1)
                 boxes_level.append(np.expand_dims(boxes, axis=1))
             # concat anchors on the same level to the reshape NxAx4
