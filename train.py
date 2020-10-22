@@ -81,6 +81,25 @@ class ModelWithLoss(nn.Module):
         return cls_loss, reg_loss
 
 
+def get_inference_transform(input_size: int, params: Params):
+    return transforms.Compose(
+        [
+            Normalizer(mean=params.mean, std=params.std),
+            Resizer(input_size)
+        ]
+    )
+
+
+def get_training_transform(input_size: int, params: Params):
+    return transforms.Compose(
+        [
+            Normalizer(mean=params.mean, std=params.std),
+            Augmenter(),
+            Resizer(input_size)
+        ]
+    )
+
+
 def train(opt):
     params = Params(f'projects/{opt.project}.yml')
 
@@ -97,32 +116,48 @@ def train(opt):
     os.makedirs(opt.log_path, exist_ok=True)
     os.makedirs(opt.saved_path, exist_ok=True)
 
-    training_params = {'batch_size': opt.batch_size,
-                       'shuffle': True,
-                       'drop_last': True,
-                       'collate_fn': collater,
-                       'num_workers': opt.num_workers}
+    training_params = {
+        'batch_size': opt.batch_size,
+        'shuffle': True,
+        'drop_last': True,
+        'collate_fn': collater,
+        'num_workers': opt.num_workers
+    }
 
-    val_params = {'batch_size': opt.batch_size,
-                  'shuffle': False,
-                  'drop_last': True,
-                  'collate_fn': collater,
-                  'num_workers': opt.num_workers}
+    val_params = {
+        'batch_size': opt.batch_size,
+        'shuffle': False,
+        'drop_last': True,
+        'collate_fn': collater,
+        'num_workers': opt.num_workers
+    }
 
     input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
-    training_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.train_set,
-                               transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
-                                                             Augmenter(),
-                                                             Resizer(input_sizes[opt.compound_coef])]))
-    training_generator = DataLoader(training_set, **training_params)
 
-    val_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.val_set,
-                          transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
-                                                        Resizer(input_sizes[opt.compound_coef])]))
-    val_generator = DataLoader(val_set, **val_params)
+    training_generator = DataLoader(
+        CocoDataset(
+            root_dir=os.path.join(opt.data_path, params.project_name),
+            set=params.train_set,
+            transform=get_training_transform(input_sizes[opt.compound_coef], params)
+        ),
+        **training_params
+    )
 
-    model = EfficientDetBackbone(num_classes=len(params.obj_list), compound_coef=opt.compound_coef,
-                                 ratios=eval(params.anchors_ratios), scales=eval(params.anchors_scales))
+    val_generator = DataLoader(
+        CocoDataset(
+            root_dir=os.path.join(opt.data_path, params.project_name),
+            set=params.val_set,
+            transform=get_inference_transform(input_sizes[opt.compound_coef], params)
+        ),
+        **val_params
+    )
+
+    model = EfficientDetBackbone(
+        num_classes=len(params.obj_list),
+        compound_coef=opt.compound_coef,
+        ratios=eval(params.anchors_ratios),
+        scales=eval(params.anchors_scales)
+    )
 
     # load last weights
     if opt.load_weights is not None:
@@ -291,7 +326,8 @@ def train(opt):
 
                 print(
                     'Val. Epoch: {}/{}. Classification loss: {:1.5f}. Regression loss: {:1.5f}. Total loss: {:1.5f}'.format(
-                        epoch, opt.num_epochs, cls_loss, reg_loss, loss))
+                        epoch, opt.num_epochs, cls_loss, reg_loss, loss)
+                )
                 writer.add_scalars('Loss', {'val': loss}, step)
                 writer.add_scalars('Regression_loss', {'val': reg_loss}, step)
                 writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
