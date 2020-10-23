@@ -422,7 +422,12 @@ def train(opt):
                     )
                     break
     except KeyboardInterrupt:
-        save_checkpoint(model, f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth")
+        save_checkpoint(
+            model=model,
+            output_path=os.path.join(
+                opt.saved_path, f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth"
+            ),
+        )
         writer.close()
     writer.close()
 
@@ -458,11 +463,11 @@ def _set_gpus_number(params):
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
-def save_checkpoint(model, name):
+def save_checkpoint(model: ModelWithLoss, output_path: str):
     if isinstance(model, CustomDataParallel):
-        torch.save(model.module.model.state_dict(), os.path.join(opt.saved_path, name))
+        torch.save(model.module.model.state_dict(), output_path)
     else:
-        torch.save(model.model.state_dict(), os.path.join(opt.saved_path, name))
+        torch.save(model.model.state_dict(), output_path)
 
 
 if __name__ == "__main__":
