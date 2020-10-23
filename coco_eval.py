@@ -24,56 +24,50 @@ from backbone import EfficientDetBackbone
 from efficientdet.utils import BBoxTransform, ClipBoxes
 from utils.utils import preprocess, invert_affine, postprocess, boolean_string
 
-ap = argparse.ArgumentParser()
-ap.add_argument(
-    "-p",
-    "--project",
-    type=str,
-    default="coco",
-    help="project file that contains parameters",
-)
-ap.add_argument(
-    "-c", "--compound_coef", type=int, default=0, help="coefficients of efficientdet"
-)
-ap.add_argument("-w", "--weights", type=str, default=None, help="/path/to/weights")
-ap.add_argument(
-    "--nms_threshold",
-    type=float,
-    default=0.5,
-    help="nms threshold, don't change it if not for testing purposes",
-)
-ap.add_argument("--cuda", type=boolean_string, default=True)
-ap.add_argument("--device", type=int, default=0)
-ap.add_argument("--float16", type=boolean_string, default=False)
-ap.add_argument(
-    "--override",
-    type=boolean_string,
-    default=True,
-    help="override previous bbox results file if exists",
-)
-args = ap.parse_args()
 
-compound_coef = args.compound_coef
-nms_threshold = args.nms_threshold
-use_cuda = args.cuda
-gpu = args.device
-use_float16 = args.float16
-override_prev_results = args.override
-project_name = args.project
-weights_path = (
-    f"weights/efficientdet-d{compound_coef}.pth"
-    if args.weights is None
-    else args.weights
-)
+from config import input_sizes
 
-print(
-    f"running coco-style evaluation on project {project_name}, weights {weights_path}..."
-)
 
-params = yaml.safe_load(open(f"projects/{project_name}.yml"))
-obj_list = params["obj_list"]
-
-input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
+def get_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "-p",
+        "--project",
+        type=str,
+        default="projects/coco.yml",
+        help="project filepath that contains parameters",
+    )
+    ap.add_argument(
+        "-dd",
+        "--data_directory",
+        type=str,
+        default="datasets",
+        help="data directory with datasets",
+    )
+    ap.add_argument(
+        "-c",
+        "--compound_coef",
+        type=int,
+        default=0,
+        help="coefficients of efficientdet",
+    )
+    ap.add_argument("-w", "--weights", type=str, default=None, help="/path/to/weights")
+    ap.add_argument(
+        "--nms_threshold",
+        type=float,
+        default=0.5,
+        help="nms threshold, don't change it if not for testing purposes",
+    )
+    ap.add_argument("--cuda", type=boolean_string, default=True)
+    ap.add_argument("--device", type=int, default=0)
+    ap.add_argument("--float16", type=boolean_string, default=False)
+    ap.add_argument(
+        "--override",
+        type=boolean_string,
+        default=True,
+        help="override previous bbox results file if exists",
+    )
+    return ap.parse_args()
 
 
 def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
@@ -170,32 +164,62 @@ def _eval(coco_gt, image_ids, pred_json_path):
 
 
 if __name__ == "__main__":
+    args = get_args()
+
+    project_name = os.path.splitext(os.path.basename(args.project))[0]
+
+    override_prev_results = args.override
+    params = yaml.safe_load(open(args.project))
+    obj_list = params["obj_list"]
     SET_NAME = params["val_set"]
-    VAL_GT = f'datasets/{params["project_name"]}/annotations/instances_{SET_NAME}.json'
-    VAL_IMGS = f'datasets/{params["project_name"]}/{SET_NAME}/'
+
+    result_file = f"{SET_NAME}_bbox_results.json"
+    if override_prev_results or not os.path.exists(result_file):
+        raise ValueError(
+            f"Result file: {result_file} already exists, please choose another name or set `override` param to True."
+        )
+
+    data_directory = args.data_directory
+    compound_coef = args.compound_coef
+    nms_threshold = args.nms_threshold
+    use_cuda = args.cuda
+    gpu = args.device
+    use_float16 = args.float16
+
+    weights_path = (
+        f"weights/efficientdet-d{compound_coef}.pth"
+        if args.weights is None
+        else args.weights
+    )
+
+    print(
+        f"running coco-style evaluation on project {project_name}, weights {weights_path}..."
+    )
+
+    VAL_GT = f'{data_directory}/{params["project_name"]}/annotations/instances_{SET_NAME}.json'
+    VAL_IMGS = f'{data_directory}/{params["project_name"]}/{SET_NAME}/'
     MAX_IMAGES = 10000
     coco_gt = COCO(VAL_GT)
     image_ids = coco_gt.getImgIds()[:MAX_IMAGES]
 
-    if override_prev_results or not os.path.exists(f"{SET_NAME}_bbox_results.json"):
-        model = EfficientDetBackbone(
-            compound_coef=compound_coef,
-            num_classes=len(obj_list),
-            ratios=eval(params["anchors_ratios"]),
-            scales=eval(params["anchors_scales"]),
-        )
-        model.load_state_dict(
-            torch.load(weights_path, map_location=torch.device("cpu"))
-        )
-        model.requires_grad_(False)
-        model.eval()
+    model = EfficientDetBackbone(
+        compound_coef=compound_coef,
+        num_classes=len(obj_list),
+        ratios=eval(params["anchors_ratios"]),
+        scales=eval(params["anchors_scales"]),
+    )
+    model.load_state_dict(
+        torch.load(weights_path, map_location=torch.device("cpu"))
+    )
+    model.requires_grad_(False)
+    model.eval()
 
-        if use_cuda:
-            model.cuda(gpu)
+    if use_cuda:
+        model.cuda(gpu)
 
-            if use_float16:
-                model.half()
+        if use_float16:
+            model.half()
 
-        evaluate_coco(VAL_IMGS, SET_NAME, image_ids, coco_gt, model)
+    evaluate_coco(VAL_IMGS, SET_NAME, image_ids, coco_gt, model)
 
     _eval(coco_gt, image_ids, f"{SET_NAME}_bbox_results.json")

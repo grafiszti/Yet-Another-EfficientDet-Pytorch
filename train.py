@@ -27,6 +27,7 @@ from utils.utils import (
     init_weights,
     boolean_string,
 )
+from config import input_sizes
 
 
 class Params:
@@ -45,8 +46,8 @@ def get_args():
         "-p",
         "--project",
         type=str,
-        default="coco",
-        help="project file that contains parameters",
+        default="projects/coco.yml",
+        help="project file path that contains parameters",
     )
     parser.add_argument(
         "-c",
@@ -164,20 +165,11 @@ def get_training_transform(input_size: int, params: Params):
 
 
 def train(opt):
-    params = Params(f"projects/{opt.project}.yml")
+    params = Params(opt.project)
 
-    if params.num_gpus == 0:
-        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(42)
-    else:
-        torch.manual_seed(42)
-
-    opt.saved_path = opt.saved_path + f"/{params.project_name}/"
-    opt.log_path = opt.log_path + f"/{params.project_name}/tensorboard/"
-    os.makedirs(opt.log_path, exist_ok=True)
-    os.makedirs(opt.saved_path, exist_ok=True)
+    _set_gpus_number(params)
+    _set_cuda_seed()
+    _create_missing_dirs(opt, params)
 
     training_params = {
         "batch_size": opt.batch_size,
@@ -194,8 +186,6 @@ def train(opt):
         "collate_fn": collater,
         "num_workers": opt.num_workers,
     }
-
-    input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
 
     training_generator = DataLoader(
         CocoDataset(
@@ -228,6 +218,7 @@ def train(opt):
             weights_path = opt.load_weights
         else:
             weights_path = get_last_weights(opt.saved_path)
+
         try:
             last_step = int(os.path.basename(weights_path).split("_")[-1].split(".")[0])
         except:
@@ -236,9 +227,11 @@ def train(opt):
         try:
             ret = model.load_state_dict(torch.load(weights_path), strict=False)
         except RuntimeError as e:
-            print(f"[Warning] Ignoring {e}")
             print(
-                "[Warning] Don't panic if you see this, this might be because you load a pretrained weights with different number of classes. The rest of the weights should be loaded already."
+                f"[Warning] Ignoring {e} \n"
+                "[Warning] Don't panic if you see this, this might be because you load "
+                "a pretrained weights with different number of classes. The rest of the"
+                " weights should be loaded already."
             )
 
         print(
@@ -251,16 +244,7 @@ def train(opt):
 
     # freeze backbone if train head_only
     if opt.head_only:
-
-        def freeze_backbone(m):
-            classname = m.__class__.__name__
-            for ntl in ["EfficientNet", "BiFPN"]:
-                if ntl in classname:
-                    for param in m.parameters():
-                        param.requires_grad = False
-
-        model.apply(freeze_backbone)
-        print("[Info] freezed backbone")
+        _freeze_model_backbone(model)
 
     # https://github.com/vacancy/Synchronized-BatchNorm-PyTorch
     # apply sync_bn when using multiple gpu and batch_size per gpu is lower than 4
@@ -441,6 +425,37 @@ def train(opt):
         save_checkpoint(model, f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth")
         writer.close()
     writer.close()
+
+
+def _freeze_model_backbone(model):
+    def freeze_backbone(m):
+        classname = m.__class__.__name__
+        for ntl in ["EfficientNet", "BiFPN"]:
+            if ntl in classname:
+                for param in m.parameters():
+                    param.requires_grad = False
+
+    model.apply(freeze_backbone)
+    print("[Info] freezed backbone")
+
+
+def _create_missing_dirs(opt, params):
+    opt.saved_path = opt.saved_path + f"/{params.project_name}/"
+    opt.log_path = opt.log_path + f"/{params.project_name}/tensorboard/"
+    os.makedirs(opt.saved_path, exist_ok=True)
+    os.makedirs(opt.log_path, exist_ok=True)
+
+
+def _set_cuda_seed():
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(42)
+    else:
+        torch.manual_seed(42)
+
+
+def _set_gpus_number(params):
+    if params.num_gpus == 0:
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
 def save_checkpoint(model, name):
