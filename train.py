@@ -259,9 +259,7 @@ def train(opt):
     else:
         use_sync_bn = False
 
-    writer = SummaryWriter(
-        opt.log_path + f'/{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}/'
-    )
+    writer = _create_summary_writer(opt.log_path)
 
     # warp the model with loss function, to reduce the memory usage on gpu0 and speedup
     model = ModelWithLoss(model, debug=opt.debug)
@@ -273,13 +271,7 @@ def train(opt):
             if use_sync_bn:
                 patch_replication_callback(model)
 
-    if opt.optim == "adamw":
-        optimizer = torch.optim.AdamW(model.parameters(), opt.lr)
-    else:
-        optimizer = torch.optim.SGD(
-            model.parameters(), opt.lr, momentum=0.9, nesterov=True
-        )
-
+    optimizer = _get_optimizer(model, opt.optim, opt.lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, patience=3, verbose=True
     )
@@ -298,6 +290,7 @@ def train(opt):
             if epoch < last_epoch:
                 continue
 
+            # training
             epoch_loss = []
             progress_bar = tqdm(training_generator)
             for iter, data in enumerate(progress_bar):
@@ -352,7 +345,7 @@ def train(opt):
                     step += 1
 
                     if step % opt.save_interval == 0 and step > 0:
-                        save_checkpoint(
+                        _save_checkpoint(
                             model,
                             f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth",
                         )
@@ -364,6 +357,7 @@ def train(opt):
                     continue
             scheduler.step(np.mean(epoch_loss))
 
+            # validation
             if epoch % opt.val_interval == 0:
                 model.eval()
                 loss_regression_ls = []
@@ -407,7 +401,7 @@ def train(opt):
                     best_loss = loss
                     best_epoch = epoch
 
-                    save_checkpoint(
+                    _save_checkpoint(
                         model, f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth"
                     )
 
@@ -422,7 +416,7 @@ def train(opt):
                     )
                     break
     except KeyboardInterrupt:
-        save_checkpoint(
+        _save_checkpoint(
             model=model,
             output_path=os.path.join(
                 opt.saved_path, f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth"
@@ -432,7 +426,19 @@ def train(opt):
     writer.close()
 
 
-def _freeze_model_backbone(model):
+def _get_optimizer(model: ModelWithLoss, optim: str, lr: float):
+    if optim == "adamw":
+        return torch.optim.AdamW(model.parameters(), lr)
+    return torch.optim.SGD(model.parameters(), lr, momentum=0.9, nesterov=True)
+
+
+def _create_summary_writer(log_path: str):
+    return SummaryWriter(
+        log_path + f'/{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}/'
+    )
+
+
+def _freeze_model_backbone(model: EfficientDetBackbone):
     def freeze_backbone(m):
         classname = m.__class__.__name__
         for ntl in ["EfficientNet", "BiFPN"]:
@@ -463,13 +469,17 @@ def _set_gpus_number(params):
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
-def save_checkpoint(model: ModelWithLoss, output_path: str):
+def _save_checkpoint(model: ModelWithLoss, output_path: str):
     if isinstance(model, CustomDataParallel):
         torch.save(model.module.model.state_dict(), output_path)
     else:
         torch.save(model.model.state_dict(), output_path)
 
 
-if __name__ == "__main__":
+def run():
     opt = get_args()
     train(opt)
+
+
+if __name__ == "__main__":
+    run()
