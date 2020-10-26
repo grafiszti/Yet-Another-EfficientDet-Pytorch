@@ -346,8 +346,11 @@ def train(opt):
 
                     if step % opt.save_interval == 0 and step > 0:
                         _save_checkpoint(
-                            model,
-                            f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth",
+                            model=model,
+                            output_path=os.path.join(
+                                opt.saved_path,
+                                f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth",
+                            ),
                         )
                         print("checkpoint...")
 
@@ -402,7 +405,11 @@ def train(opt):
                     best_epoch = epoch
 
                     _save_checkpoint(
-                        model, f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth"
+                        model=model,
+                        output_path=os.path.join(
+                            opt.saved_path,
+                            f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth",
+                        ),
                     )
 
                 model.train()
