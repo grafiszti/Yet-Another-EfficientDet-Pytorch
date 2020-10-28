@@ -4,14 +4,15 @@
 """
 Simple Inference Script of EfficientDet-Pytorch for detecting objects on webcam
 """
-import time
 import torch
 import cv2
 import numpy as np
 from torch.backends import cudnn
 from backbone import EfficientDetBackbone
 from efficientdet.utils import BBoxTransform, ClipBoxes
-from utils.utils import preprocess, invert_affine, postprocess, preprocess_video
+from utils.utils import invert_affine, postprocess, preprocess_video
+
+from config import input_sizes
 
 # Video's path
 video_src = "videotest.mp4"  # set int to use webcam, set str to read from a video file
@@ -121,7 +122,6 @@ obj_list = [
 ]
 
 # tf bilinear interpolation is different from any other's, just make do
-input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536]
 input_size = (
     input_sizes[compound_coef] if force_input_size is None else force_input_size
 )
@@ -136,6 +136,7 @@ if use_cuda:
     model = model.cuda()
 if use_float16:
     model = model.half()
+
 
 # function for display
 def display(preds, imgs):

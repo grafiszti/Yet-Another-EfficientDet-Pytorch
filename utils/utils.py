@@ -4,7 +4,7 @@ import math
 import os
 import uuid
 from glob import glob
-from typing import Union
+from typing import Union, List
 
 import cv2
 import numpy as np
@@ -75,6 +75,24 @@ def aspectaware_resize_padding(image, width, height, interpolation=None, means=N
         padding_w,
         padding_h,
     )
+
+
+def preprocess_images(
+    images: List[np.array],
+    max_size: int,
+    mean=(0.485, 0.456, 0.406),
+    std=(0.229, 0.224, 0.225),
+):
+    ori_imgs = [img[..., ::-1] for img in images]
+    normalized_imgs = [(img / 255 - mean) / std for img in ori_imgs]
+    imgs_meta = [
+        aspectaware_resize_padding(img, max_size, max_size, means=None)
+        for img in normalized_imgs
+    ]
+    framed_imgs = [img_meta[0] for img_meta in imgs_meta]
+    framed_metas = [img_meta[1:] for img_meta in imgs_meta]
+
+    return ori_imgs, framed_imgs, framed_metas
 
 
 def preprocess(
@@ -253,17 +271,20 @@ class CustomDataParallel(nn.DataParallel):
         if splits == 0:
             raise Exception("Batchsize must be greater than num_gpus.")
 
-        return [
-            (
-                inputs[0][splits * device_idx : splits * (device_idx + 1)].to(
-                    f"cuda:{device_idx}", non_blocking=True
-                ),
-                inputs[1][splits * device_idx : splits * (device_idx + 1)].to(
-                    f"cuda:{device_idx}", non_blocking=True
-                ),
-            )
-            for device_idx in range(len(devices))
-        ], [kwargs] * len(devices)
+        return (
+            [
+                (
+                    inputs[0][splits * device_idx : splits * (device_idx + 1)].to(
+                        f"cuda:{device_idx}", non_blocking=True
+                    ),
+                    inputs[1][splits * device_idx : splits * (device_idx + 1)].to(
+                        f"cuda:{device_idx}", non_blocking=True
+                    ),
+                )
+                for device_idx in range(len(devices))
+            ],
+            [kwargs] * len(devices),
+        )
 
 
 def get_last_weights(weights_path):

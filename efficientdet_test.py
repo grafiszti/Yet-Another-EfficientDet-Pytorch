@@ -12,9 +12,11 @@ from backbone import EfficientDetBackbone
 import cv2
 import numpy as np
 
+from config import input_sizes
+
 from efficientdet.utils import BBoxTransform, ClipBoxes
 from utils.utils import (
-    preprocess,
+    preprocess_images,
     invert_affine,
     postprocess,
     STANDARD_COLORS,
@@ -135,11 +137,12 @@ obj_list = [
 
 color_list = standard_to_bgr(STANDARD_COLORS)
 # tf bilinear interpolation is different from any other's, just make do
-input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
 input_size = (
     input_sizes[compound_coef] if force_input_size is None else force_input_size
 )
-ori_imgs, framed_imgs, framed_metas = preprocess(img_path, max_size=input_size)
+ori_imgs, framed_imgs, framed_metas = preprocess_images(
+    [cv2.imread(img_path)], max_size=input_size
+)
 
 if use_cuda:
     x = torch.stack([torch.from_numpy(fi).cuda() for fi in framed_imgs], 0)

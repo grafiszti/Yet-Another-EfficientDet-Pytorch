@@ -22,10 +22,12 @@ from pycocotools.cocoeval import COCOeval
 
 from backbone import EfficientDetBackbone
 from efficientdet.utils import BBoxTransform, ClipBoxes
-from utils.utils import preprocess, invert_affine, postprocess, boolean_string
+from utils.utils import preprocess_images, invert_affine, postprocess, boolean_string
 
+import cv2
 
 from config import input_sizes
+from consts import NO_MODEL_OUTPUT_ERROR, INVALID_STATE_DICT_LOAD_ERROR
 
 
 def get_args():
@@ -43,6 +45,13 @@ def get_args():
         type=str,
         default="datasets",
         help="data directory with datasets",
+    )
+    ap.add_argument(
+        "-o",
+        "--output_file",
+        type=str,
+        default="evaluation_results.json",
+        help="output filepath with evaluation results",
     )
     ap.add_argument(
         "-c",
@@ -70,7 +79,21 @@ def get_args():
     return ap.parse_args()
 
 
-def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
+def evaluate_coco(
+    img_path: str,
+    image_ids,
+    coco,
+    model,
+    compound_coef: int,
+    use_float16: bool,
+    use_cuda: bool,
+    gpu: str,
+    nms_threshold: float,
+    result_file: str,
+    threshold=0.05,
+):
+    assert os.path.exists(img_path)
+
     results = []
 
     regressBoxes = BBoxTransform()
@@ -80,8 +103,8 @@ def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
         image_info = coco.loadImgs(image_id)[0]
         image_path = img_path + image_info["file_name"]
 
-        ori_imgs, framed_imgs, framed_metas = preprocess(
-            image_path, max_size=input_sizes[compound_coef]
+        ori_imgs, framed_imgs, framed_metas = preprocess_images(
+            [cv2.imread(image_path)], max_size=input_sizes[compound_coef]
         )
         x = torch.from_numpy(framed_imgs[0])
 
@@ -139,15 +162,12 @@ def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
                 results.append(image_result)
 
     if not len(results):
-        raise Exception(
-            "the model does not provide any valid output, check model architecture and the data input"
-        )
+        raise Exception(NO_MODEL_OUTPUT_ERROR)
 
     # write output
-    filepath = f"{set_name}_bbox_results.json"
-    if os.path.exists(filepath):
-        os.remove(filepath)
-    json.dump(results, open(filepath, "w"), indent=4)
+    if os.path.exists(result_file):
+        os.remove(result_file)
+    json.dump(results, open(result_file, "w"), indent=4)
 
 
 def _eval(coco_gt, image_ids, pred_json_path):
@@ -163,18 +183,16 @@ def _eval(coco_gt, image_ids, pred_json_path):
     coco_eval.summarize()
 
 
-if __name__ == "__main__":
-    args = get_args()
-
+def run(args):
     project_name = os.path.splitext(os.path.basename(args.project))[0]
 
     override_prev_results = args.override
+    result_file = args.output_file
     params = yaml.safe_load(open(args.project))
     obj_list = params["obj_list"]
     SET_NAME = params["val_set"]
 
-    result_file = f"{SET_NAME}_bbox_results.json"
-    if override_prev_results or not os.path.exists(result_file):
+    if not override_prev_results and os.path.exists(result_file):
         raise ValueError(
             f"Result file: {result_file} already exists, please choose another name or set `override` param to True."
         )
@@ -208,9 +226,12 @@ if __name__ == "__main__":
         ratios=eval(params["anchors_ratios"]),
         scales=eval(params["anchors_scales"]),
     )
-    model.load_state_dict(
-        torch.load(weights_path, map_location=torch.device("cpu"))
-    )
+    try:
+        model.load_state_dict(
+            torch.load(weights_path, map_location=torch.device("cpu"))
+        )
+    except RuntimeError as e:
+        print(INVALID_STATE_DICT_LOAD_ERROR.format(e))
     model.requires_grad_(False)
     model.eval()
 
@@ -220,6 +241,25 @@ if __name__ == "__main__":
         if use_float16:
             model.half()
 
-    evaluate_coco(VAL_IMGS, SET_NAME, image_ids, coco_gt, model)
+    evaluate_coco(
+        VAL_IMGS,
+        image_ids,
+        coco_gt,
+        model,
+        compound_coef=compound_coef,
+        use_float16=use_float16,
+        use_cuda=use_cuda,
+        gpu=gpu,
+        nms_threshold=nms_threshold,
+        result_file=result_file,
+    )
 
-    _eval(coco_gt, image_ids, f"{SET_NAME}_bbox_results.json")
+    _eval(coco_gt, image_ids, result_file)
+
+
+if __name__ == "__main__":
+    args = get_args()
+    print(args)
+    print(type(args))
+
+    run(args)

@@ -1,0 +1,20 @@
+{
+   "categories":[{"name":"car","id":1,"supercategory":""}],
+   "annotations":[
+      {
+         "segmentation":[[285.9794921875,291.2568359375,369.4368133544922,291.2568359375,369.4368133544922,388.21460723876953,285.9794921875,388.21460723876953]],
+         "category_id":1,
+         "bbox":[285.9794921875,291.2568359375,83.45732116699219,96.95777130126953],
+         "id":7,
+         "area":8091.835859125829,
+         "image_id":4,
+         "attributes":{"occluded":false},
+         "iscrowd":0
+      }
+   ],
+   "info":{"year":"","description":"","version":"","url":"","contributor":"","date_created":""},
+   "licenses":[{"name":"","id":0,"url":""}],
+   "images":[
+      {"coco_url":"","width":683,"license":0,"id":4,"height":512,"flickr_url":"","file_name":"img4.jpg","date_captured":0}
+   ]
+}

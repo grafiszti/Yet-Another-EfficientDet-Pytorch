@@ -27,6 +27,8 @@ from utils.utils import (
     init_weights,
     boolean_string,
 )
+from consts import INVALID_STATE_DICT_LOAD_ERROR
+
 from config import input_sizes
 
 
@@ -164,7 +166,7 @@ def get_training_transform(input_size: int, params: Params):
     )
 
 
-def train(opt):
+def run(opt):
     params = Params(opt.project)
 
     _set_gpus_number(params)
@@ -227,12 +229,7 @@ def train(opt):
         try:
             ret = model.load_state_dict(torch.load(weights_path), strict=False)
         except RuntimeError as e:
-            print(
-                f"[Warning] Ignoring {e} \n"
-                "[Warning] Don't panic if you see this, this might be because you load "
-                "a pretrained weights with different number of classes. The rest of the"
-                " weights should be loaded already."
-            )
+            print(INVALID_STATE_DICT_LOAD_ERROR.format(e))
 
         print(
             f"[Info] loaded weights: {os.path.basename(weights_path)}, resuming checkpoint from step: {last_step}"
@@ -476,6 +473,7 @@ def _set_gpus_number(params):
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
+
 def _save_checkpoint(model: ModelWithLoss, output_path: str):
     if isinstance(model, CustomDataParallel):
         torch.save(model.module.model.state_dict(), output_path)
@@ -483,10 +481,6 @@ def _save_checkpoint(model: ModelWithLoss, output_path: str):
         torch.save(model.model.state_dict(), output_path)
 
 
-def run():
-    opt = get_args()
-    train(opt)
-
-
 if __name__ == "__main__":
-    run()
+    opt = get_args()
+    run(opt)
