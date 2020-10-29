@@ -18,6 +18,7 @@ class CocoPredictor:
         model_path: str,
         compound_coef: int,
         device: str,
+        gpu: int,
         classes_number: int,
         anchor_ratios: List[Tuple],
         anchor_scales: List[float],
@@ -51,7 +52,7 @@ class CocoPredictor:
         self.model.eval()
 
         if device == "cuda":
-            self.model = self.model.cuda()
+            self.model = self.model.cuda(gpu)
         if use_float16:
             self.model = self.model.half()
 

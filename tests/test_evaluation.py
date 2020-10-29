@@ -24,6 +24,7 @@ def test_evaluation():
         model_path=base_efficitnetdet_0_model,
         compound_coef=0,
         device="cpu",
+        gpu=0,
         classes_number=1,
         anchor_ratios=[(1.0, 1.0), (1.4, 0.7), (0.7, 1.4)],
         anchor_scales=[2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)],

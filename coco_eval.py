@@ -14,20 +14,18 @@ import json
 import os
 
 import argparse
-import torch
 import yaml
 from tqdm import tqdm
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
-from backbone import EfficientDetBackbone
-from efficientdet.utils import BBoxTransform, ClipBoxes
-from utils.utils import preprocess_images, invert_affine, postprocess, boolean_string
+from utils.utils import boolean_string
 
 import cv2
 
-from config import input_sizes
-from consts import NO_MODEL_OUTPUT_ERROR, INVALID_STATE_DICT_LOAD_ERROR
+from consts import NO_MODEL_OUTPUT_ERROR
+
+from predictor import CocoPredictor
 
 
 def get_args():
@@ -60,7 +58,13 @@ def get_args():
         default=0,
         help="coefficients of efficientdet",
     )
-    ap.add_argument("-w", "--weights", type=str, default=None, help="/path/to/weights")
+    ap.add_argument(
+        "-w",
+        "--weights",
+        type=str,
+        default=None,
+        help="/path/to/weights/efficientdet.pth",
+    )
     ap.add_argument(
         "--nms_threshold",
         type=float,
@@ -80,65 +84,27 @@ def get_args():
 
 
 def evaluate_coco(
-    img_path: str,
+    images_dir: str,
     image_ids,
     coco,
-    model,
-    compound_coef: int,
-    use_float16: bool,
-    use_cuda: bool,
-    gpu: str,
-    nms_threshold: float,
     result_file: str,
+    predictor: CocoPredictor,
+    iou_threshold,
     threshold=0.05,
 ):
-    assert os.path.exists(img_path)
+    assert os.path.exists(images_dir)
 
     results = []
 
-    regressBoxes = BBoxTransform()
-    clipBoxes = ClipBoxes()
-
     for image_id in tqdm(image_ids):
         image_info = coco.loadImgs(image_id)[0]
-        image_path = img_path + image_info["file_name"]
+        image_path = images_dir + image_info["file_name"]
 
-        ori_imgs, framed_imgs, framed_metas = preprocess_images(
-            [cv2.imread(image_path)], max_size=input_sizes[compound_coef]
+        rois, class_ids, scores = predictor.predict(
+            image=cv2.imread(image_path),
+            threshold=threshold,
+            iou_threshold=iou_threshold,
         )
-        x = torch.from_numpy(framed_imgs[0])
-
-        if use_cuda:
-            x = x.cuda(gpu)
-            if use_float16:
-                x = x.half()
-            else:
-                x = x.float()
-        else:
-            x = x.float()
-
-        x = x.unsqueeze(0).permute(0, 3, 1, 2)
-        features, regression, classification, anchors = model(x)
-
-        preds = postprocess(
-            x,
-            anchors,
-            regression,
-            classification,
-            regressBoxes,
-            clipBoxes,
-            threshold,
-            nms_threshold,
-        )
-
-        if not preds:
-            continue
-
-        preds = invert_affine(framed_metas, preds)[0]
-
-        scores = preds["scores"]
-        class_ids = preds["class_ids"]
-        rois = preds["rois"]
 
         if rois.shape[0] > 0:
             # x1,y1,x2,y2 -> x1,y1,w,h
@@ -162,7 +128,7 @@ def evaluate_coco(
                 results.append(image_result)
 
     if not len(results):
-        raise Exception(NO_MODEL_OUTPUT_ERROR)
+        raise print(NO_MODEL_OUTPUT_ERROR)
 
     # write output
     if os.path.exists(result_file):
@@ -218,40 +184,32 @@ def run(args):
     VAL_IMGS = f'{data_directory}/{params["project_name"]}/{SET_NAME}/'
     MAX_IMAGES = 10000
     coco_gt = COCO(VAL_GT)
-    image_ids = coco_gt.getImgIds()[:MAX_IMAGES]
 
-    model = EfficientDetBackbone(
-        compound_coef=compound_coef,
-        num_classes=len(obj_list),
-        ratios=eval(params["anchors_ratios"]),
-        scales=eval(params["anchors_scales"]),
-    )
-    try:
-        model.load_state_dict(
-            torch.load(weights_path, map_location=torch.device("cpu"))
+    image_ids = coco_gt.getImgIds()
+    if len(image_ids) > MAX_IMAGES:
+        print(
+            f"Exceed {MAX_IMAGES} images in val, taking only first {MAX_IMAGES} images."
         )
-    except RuntimeError as e:
-        print(INVALID_STATE_DICT_LOAD_ERROR.format(e))
-    model.requires_grad_(False)
-    model.eval()
+    image_ids = image_ids[:MAX_IMAGES]
 
-    if use_cuda:
-        model.cuda(gpu)
-
-        if use_float16:
-            model.half()
+    predictor = CocoPredictor(
+        model_path=weights_path,
+        compound_coef=compound_coef,
+        device="cuda" if use_cuda else "cpu",
+        gpu=gpu,
+        classes_number=len(obj_list),
+        anchor_ratios=eval(params["anchors_ratios"]),
+        anchor_scales=eval(params["anchors_scales"]),
+        use_float16=use_float16,
+    )
 
     evaluate_coco(
-        VAL_IMGS,
-        image_ids,
-        coco_gt,
-        model,
-        compound_coef=compound_coef,
-        use_float16=use_float16,
-        use_cuda=use_cuda,
-        gpu=gpu,
-        nms_threshold=nms_threshold,
+        images_dir=VAL_IMGS,
+        image_ids=image_ids,
+        coco=coco_gt,
         result_file=result_file,
+        predictor=predictor,
+        iou_threshold=nms_threshold,
     )
 
     _eval(coco_gt, image_ids, result_file)
@@ -259,7 +217,4 @@ def run(args):
 
 if __name__ == "__main__":
     args = get_args()
-    print(args)
-    print(type(args))
-
     run(args)
