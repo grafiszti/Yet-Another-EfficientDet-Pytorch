@@ -170,7 +170,7 @@ def run(opt):
     params = Params(opt.project)
 
     _set_gpus_number(params)
-    _set_cuda_seed()
+    _set_seed()
     _create_missing_dirs(opt, params)
 
     training_params = {
@@ -461,7 +461,7 @@ def _create_missing_dirs(opt, params):
     os.makedirs(opt.log_path, exist_ok=True)
 
 
-def _set_cuda_seed():
+def _set_seed():
     if torch.cuda.is_available():
         torch.cuda.manual_seed(42)
     else:
@@ -471,7 +471,6 @@ def _set_cuda_seed():
 def _set_gpus_number(params):
     if params.num_gpus == 0:
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-
 
 
 def _save_checkpoint(model: ModelWithLoss, output_path: str):

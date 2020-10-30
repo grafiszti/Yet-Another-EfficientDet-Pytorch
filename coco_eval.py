@@ -114,21 +114,17 @@ def evaluate_coco(
             bbox_score = scores
 
             for roi_id in range(rois.shape[0]):
-                score = float(bbox_score[roi_id])
-                label = int(class_ids[roi_id])
-                box = rois[roi_id, :]
-
-                image_result = {
-                    "image_id": image_id,
-                    "category_id": label + 1,
-                    "score": float(score),
-                    "bbox": box.tolist(),
-                }
-
-                results.append(image_result)
+                results.append(
+                    {
+                        "image_id": image_id,
+                        "category_id": int(class_ids[roi_id]) + 1,
+                        "score": float(bbox_score[roi_id]),
+                        "bbox": rois[roi_id, :].tolist(),
+                    }
+                )
 
     if not len(results):
-        raise print(NO_MODEL_OUTPUT_ERROR)
+        print(NO_MODEL_OUTPUT_ERROR)
 
     # write output
     if os.path.exists(result_file):
@@ -170,15 +166,7 @@ def run(args):
     gpu = args.device
     use_float16 = args.float16
 
-    weights_path = (
-        f"weights/efficientdet-d{compound_coef}.pth"
-        if args.weights is None
-        else args.weights
-    )
-
-    print(
-        f"running coco-style evaluation on project {project_name}, weights {weights_path}..."
-    )
+    weights_path = get_weights_path(args, compound_coef)
 
     VAL_GT = f'{data_directory}/{params["project_name"]}/annotations/instances_{SET_NAME}.json'
     VAL_IMGS = f'{data_directory}/{params["project_name"]}/{SET_NAME}/'
@@ -213,6 +201,15 @@ def run(args):
     )
 
     _eval(coco_gt, image_ids, result_file)
+
+
+def get_weights_path(args, compound_coef):
+    weights_path = (
+        f"weights/efficientdet-d{compound_coef}.pth"
+        if args.weights is None
+        else args.weights
+    )
+    return weights_path
 
 
 if __name__ == "__main__":
