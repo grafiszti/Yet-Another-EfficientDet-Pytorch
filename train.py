@@ -15,6 +15,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm.autonotebook import tqdm
+import PIL
 
 from backbone import EfficientDetBackbone
 from efficientdet.dataset import CocoDataset, Resizer, Normalizer, Augmenter, collater
@@ -161,6 +162,20 @@ def get_inference_transform(input_size: int, params: Params):
 
 
 def get_training_transform(input_size: int, params: Params):
+    return transforms.Compose(
+        [
+            Normalizer(mean=params.mean, std=params.std),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(hue=0.05, saturation=0.05),
+            transforms.RandomRotation(90, resample=PIL.Image.BILINEAR),
+            transforms.RandomAffine(degrees=0, scale=(0.95, 1.0)),
+            Augmenter(),
+            Resizer(input_size),
+        ]
+    )
+
+
+def get_training_transform_weak(input_size: int, params: Params):
     return transforms.Compose(
         [Normalizer(mean=params.mean, std=params.std), Augmenter(), Resizer(input_size)]
     )
