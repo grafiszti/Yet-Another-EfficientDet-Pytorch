@@ -1,4 +1,6 @@
 import os
+from typing import Dict
+
 import torch
 import numpy as np
 
@@ -6,13 +8,19 @@ from torch.utils.data import Dataset, DataLoader
 from pycocotools.coco import COCO
 import cv2
 
+is_albu = True
+
 
 class CocoDataset(Dataset):
-    def __init__(self, root_dir, set="train2017", transform=None):
+    def __init__(
+        self, root_dir, set="train2017", is_albu_transform: bool = True, transform=None,
+    ):
 
         self.root_dir = root_dir
         self.set_name = set
         self.transform = transform
+        self.is_albu_transform = is_albu_transform
+        is_albu = is_albu_transform
 
         self.coco = COCO(
             os.path.join(
@@ -42,12 +50,32 @@ class CocoDataset(Dataset):
         return len(self.image_ids)
 
     def __getitem__(self, idx):
-
         img = self.load_image(idx)
         annot = self.load_annotations(idx)
         sample = {"img": img, "annot": annot}
+
         if self.transform:
-            sample = self.transform(sample)
+            if self.is_albu_transform:
+                transformation_result = self.transform(
+                    image=sample["img"], bboxes=sample["annot"][:, :4]
+                )
+
+                sample = {
+                    "img": torch.from_numpy(transformation_result["image"]).to(
+                        torch.float32
+                    ),
+                    "annot": torch.from_numpy(
+                        np.concatenate(
+                            [
+                                transformation_result["bboxes"],
+                                annot[:, 4].reshape(-1, 1),
+                            ],
+                            axis=1,
+                        )
+                    ),
+                }
+            else:
+                sample = self.transform(sample)
         return sample
 
     def load_image(self, image_index):
@@ -56,7 +84,7 @@ class CocoDataset(Dataset):
         img = cv2.imread(path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        return img.astype(np.float32) / 255.0
+        return img #.astype(np.float32) / 255.0
 
     def load_annotations(self, image_index):
         # get ground truth annotations
@@ -83,8 +111,9 @@ class CocoDataset(Dataset):
             annotations = np.append(annotations, annotation, axis=0)
 
         # transform from [x, y, w, h] to [x1, y1, x2, y2]
-        annotations[:, 2] = annotations[:, 0] + annotations[:, 2]
-        annotations[:, 3] = annotations[:, 1] + annotations[:, 3]
+        if not self.is_albu_transform:
+            annotations[:, 2] = annotations[:, 0] + annotations[:, 2]
+            annotations[:, 3] = annotations[:, 1] + annotations[:, 3]
 
         return annotations
 
@@ -92,7 +121,8 @@ class CocoDataset(Dataset):
 def collater(data):
     imgs = [s["img"] for s in data]
     annots = [s["annot"] for s in data]
-    scales = [s["scale"] for s in data]
+    if not is_albu:
+        scales = [s["scale"] for s in data]
 
     imgs = torch.from_numpy(np.stack(imgs, axis=0))
 
@@ -109,7 +139,11 @@ def collater(data):
 
     imgs = imgs.permute(0, 3, 1, 2)
 
-    return {"img": imgs, "annot": annot_padded, "scale": scales}
+    res = {"img": imgs, "annot": annot_padded}
+    if not is_albu:
+        res["scale"] = scales
+
+    return res
 
 
 class Resizer(object):

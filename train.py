@@ -6,6 +6,7 @@ import argparse
 import datetime
 import os
 import traceback
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -15,7 +16,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm.autonotebook import tqdm
-import PIL
+import albumentations as albu
 
 from backbone import EfficientDetBackbone
 from efficientdet.dataset import CocoDataset, Resizer, Normalizer, Augmenter, collater
@@ -155,29 +156,54 @@ class ModelWithLoss(nn.Module):
         return cls_loss, reg_loss
 
 
-def get_inference_transform(input_size: int, params: Params):
-    return transforms.Compose(
-        [Normalizer(mean=params.mean, std=params.std), Resizer(input_size)]
-    )
+import cv2
 
 
-def get_training_transform(input_size: int, params: Params):
-    return transforms.Compose(
+def get_inference_transform(
+    input_size: int, mean: Tuple[float, float, float], std: Tuple[float, float, float]
+):
+    return albu.Compose(
         [
-            Normalizer(mean=params.mean, std=params.std),
-            transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(hue=0.05, saturation=0.05),
-            transforms.RandomRotation(90, resample=PIL.Image.BILINEAR),
-            transforms.RandomAffine(degrees=0, scale=(0.95, 1.0)),
-            Augmenter(),
-            Resizer(input_size),
+            albu.Normalize(mean=mean, std=std),
+            albu.Resize(width=input_size, height=input_size),
+            albu.PadIfNeeded(
+                min_width=input_size,
+                min_height=input_size,
+                border_mode=cv2.BORDER_CONSTANT,
+            ),
         ]
     )
 
 
-def get_training_transform_weak(input_size: int, params: Params):
+def get_inference_transform_weak(
+    input_size: int, mean: Tuple[float, float, float], std: Tuple[float, float, float]
+):
+    return transforms.Compose([Normalizer(mean=mean, std=std), Resizer(input_size)])
+
+
+def get_training_transform(
+    input_size: int, mean: Tuple[float, float, float], std: Tuple[float, float, float]
+):
+    return albu.Compose(
+        [
+            albu.Normalize(mean=mean, std=std),
+            albu.Flip(),
+            albu.Blur(blur_limit=3, p=0.1),
+            albu.ShiftScaleRotate(p=0.5),
+            albu.ColorJitter(
+                brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1, p=0.2
+            ),
+            albu.Resize(width=input_size, height=input_size),
+            albu.PadIfNeeded(min_width=input_size, min_height=input_size),
+        ]
+    )
+
+
+def get_training_transform_weak(
+    input_size: int, mean: Tuple[float, float, float], std: Tuple[float, float, float]
+):
     return transforms.Compose(
-        [Normalizer(mean=params.mean, std=params.std), Augmenter(), Resizer(input_size)]
+        [Normalizer(mean=mean, std=std), Augmenter(), Resizer(input_size)]
     )
 
 
@@ -208,7 +234,9 @@ def run(opt):
         CocoDataset(
             root_dir=os.path.join(opt.data_path, params.project_name),
             set=params.train_set,
-            transform=get_training_transform(input_sizes[opt.compound_coef], params),
+            transform=get_training_transform(
+                input_sizes[opt.compound_coef], params.mean, params.std
+            ),
         ),
         **training_params,
     )
@@ -217,7 +245,9 @@ def run(opt):
         CocoDataset(
             root_dir=os.path.join(opt.data_path, params.project_name),
             set=params.val_set,
-            transform=get_inference_transform(input_sizes[opt.compound_coef], params),
+            transform=get_inference_transform(
+                input_sizes[opt.compound_coef], params.mean, params.std
+            ),
         ),
         **val_params,
     )
@@ -320,6 +350,11 @@ def run(opt):
                         annot = annot.cuda()
 
                     optimizer.zero_grad()
+                    print("SHAAAAAAPEEEE???????????????????????")
+                    print(imgs.shape)
+                    print(annot.shape)
+                    print("SHAAAAAAPEEEE!!!!!!!!!!!!!!!!!!!!!!!")
+
                     cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
                     cls_loss = cls_loss.mean()
                     reg_loss = reg_loss.mean()
@@ -357,6 +392,7 @@ def run(opt):
                     step += 1
 
                     if step % opt.save_interval == 0 and step > 0:
+                        print("Step interval reached, saving model...")
                         _save_checkpoint(
                             model=model,
                             output_path=os.path.join(
@@ -364,7 +400,6 @@ def run(opt):
                                 f"efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth",
                             ),
                         )
-                        print("checkpoint...")
 
                 except Exception as e:
                     print("[Error]", traceback.format_exc())
@@ -416,6 +451,7 @@ def run(opt):
                     best_loss = loss
                     best_epoch = epoch
 
+                    print("Saving best loss model...")
                     _save_checkpoint(
                         model=model,
                         output_path=os.path.join(
@@ -435,6 +471,7 @@ def run(opt):
                     )
                     break
     except KeyboardInterrupt:
+        print("Keyboard interrupt occured, saving model ...")
         _save_checkpoint(
             model=model,
             output_path=os.path.join(
@@ -493,6 +530,7 @@ def _save_checkpoint(model: ModelWithLoss, output_path: str):
         torch.save(model.module.model.state_dict(), output_path)
     else:
         torch.save(model.model.state_dict(), output_path)
+    print(f"Model saved to: {output_path}")
 
 
 if __name__ == "__main__":

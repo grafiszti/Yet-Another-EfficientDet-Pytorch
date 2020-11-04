@@ -27,7 +27,8 @@ class CocoPredictor:
         assert device == "cpu" or device == "cuda"
         assert 0 <= compound_coef <= 8
         assert classes_number > 0
-        assert os.path.exists(model_path)
+        if not os.path.exists(model_path):
+            raise ValueError(f"Model on path: {model_path}, does not exists.")
 
         self.device = device
         self.use_float16 = use_float16
