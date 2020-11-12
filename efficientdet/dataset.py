@@ -84,7 +84,10 @@ class CocoDataset(Dataset):
         img = cv2.imread(path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        return img #.astype(np.float32) / 255.0
+        if self.is_albu_transform:
+            return img
+        else:
+            return img.astype(np.float32) / 255.0
 
     def load_annotations(self, image_index):
         # get ground truth annotations

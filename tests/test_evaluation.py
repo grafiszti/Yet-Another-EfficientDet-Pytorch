@@ -21,7 +21,59 @@ test_project_yml = test_dir + "/test_coco_dataset.yml"
 base_efficitnetdet_0_model = "weights/efficientdet-d0.pth"
 
 
-class TestModelTrainingAndEvaluation:
+class TestModelTraining:
+    def test_training_efficient_det(self):
+        train_run(
+            argparse.Namespace(
+                project=test_project_yml,
+                compound_coef=0,
+                num_workers=12,
+                batch_size=1,
+                head_only=True,
+                lr=0.01,
+                optim="adam",
+                num_epochs=1,
+                val_interval=1,
+                save_interval=1,
+                es_min_delta=0.0,
+                es_patience=0,
+                data_path=test_dir,
+                log_path=train_result_directory,
+                load_weights=base_efficitnetdet_0_model,
+                saved_path=train_result_directory,
+                debug=False,
+            )
+        )
+
+        assert os.path.exists(train_result_directory)
+        assert len(glob(os.path.dirname(trained_test_model) + "/*.pth")) > 0
+
+
+class TestModelEvaluation:
+    @classmethod
+    def setup_class(cls):
+        train_run(
+            argparse.Namespace(
+                project=test_project_yml,
+                compound_coef=0,
+                num_workers=12,
+                batch_size=1,
+                head_only=True,
+                lr=0.01,
+                optim="adam",
+                num_epochs=1,
+                val_interval=1,
+                save_interval=1,
+                es_min_delta=0.0,
+                es_patience=0,
+                data_path=test_dir,
+                log_path=train_result_directory,
+                load_weights=base_efficitnetdet_0_model,
+                saved_path=train_result_directory,
+                debug=False,
+            )
+        )
+
     def test_evaluation(self):
         predictor = CocoPredictor(
             model_path=base_efficitnetdet_0_model,
@@ -41,32 +93,6 @@ class TestModelTrainingAndEvaluation:
         assert rois.shape[0] > 0
         assert class_ids.shape[0] > 0
         assert scores.shape[0] > 0
-
-    def test_training_efficient_det(self):
-        train_run(
-            argparse.Namespace(
-                project=test_project_yml,
-                compound_coef=0,
-                num_workers=12,
-                batch_size=1,
-                head_only=True,
-                lr=0.01,
-                optim="adam",
-                num_epochs=10,
-                val_interval=1,
-                save_interval=500,
-                es_min_delta=0.0,
-                es_patience=0,
-                data_path=test_dir,
-                log_path=train_result_directory,
-                load_weights=base_efficitnetdet_0_model,
-                saved_path=train_result_directory,
-                debug=False,
-            )
-        )
-
-        assert os.path.exists(train_result_directory)
-        assert len(glob(os.path.dirname(trained_test_model) + "/*.pth")) > 0
 
     def test_coco_eval(self):
         eval_run(
@@ -94,11 +120,11 @@ class TestModelTrainingAndEvaluation:
         assert set([a["category_id"] for a in data]) == {1}
 
 
-# def teardown_module():
-#     for path in [test_evaluation_result_filepath, train_result_directory]:
-#         if os.path.exists(path):
-#             if os.path.isdir(path):
-#                 shutil.rmtree(path)
-#             else:
-#                 os.remove(path)
-#             print(f"Removing: {path}")
+def teardown_module():
+    for path in [test_evaluation_result_filepath, train_result_directory]:
+        if os.path.exists(path):
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            print(f"Removing: {path}")
