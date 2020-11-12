@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm.autonotebook import tqdm
 import albumentations as albu
+import cv2
 
 from backbone import EfficientDetBackbone
 from efficientdet.dataset import CocoDataset, Resizer, Normalizer, Augmenter, collater
@@ -154,9 +155,6 @@ class ModelWithLoss(nn.Module):
                 classification, regression, anchors, annotations
             )
         return cls_loss, reg_loss
-
-
-import cv2
 
 
 def get_inference_transform(

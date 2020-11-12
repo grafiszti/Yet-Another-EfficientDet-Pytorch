@@ -20,7 +20,6 @@ class CocoDataset(Dataset):
         self.set_name = set
         self.transform = transform
         self.is_albu_transform = is_albu_transform
-        is_albu = is_albu_transform
 
         self.coco = COCO(
             os.path.join(
