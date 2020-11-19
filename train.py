@@ -163,13 +163,14 @@ def get_inference_transform(
     return albu.Compose(
         [
             albu.Normalize(mean=mean, std=std),
-            albu.Resize(width=input_size, height=input_size),
             albu.PadIfNeeded(
                 min_width=input_size,
                 min_height=input_size,
                 border_mode=cv2.BORDER_CONSTANT,
             ),
-        ]
+            albu.Resize(width=input_size, height=input_size),
+        ],
+        bbox_params=albu.BboxParams(format="coco"),
     )
 
 
@@ -191,9 +192,10 @@ def get_training_transform(
             albu.ColorJitter(
                 brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1, p=0.2
             ),
-            albu.Resize(width=input_size, height=input_size),
             albu.PadIfNeeded(min_width=input_size, min_height=input_size),
-        ]
+            albu.Resize(width=input_size, height=input_size),
+        ],
+        bbox_params=albu.BboxParams(format="coco"),
     )
 
 
@@ -228,13 +230,23 @@ def run(opt):
         "num_workers": opt.num_workers,
     }
 
+    use_albu = True
+
+    if not use_albu:
+        train_transform = get_training_transform_weak
+        inference_transform = get_inference_transform_weak
+    else:
+        train_transform = get_training_transform
+        inference_transform = get_inference_transform
+
     training_generator = DataLoader(
         CocoDataset(
             root_dir=os.path.join(opt.data_path, params.project_name),
             set=params.train_set,
-            transform=get_training_transform(
+            transform=train_transform(
                 input_sizes[opt.compound_coef], params.mean, params.std
             ),
+            is_albu_transform=use_albu,
         ),
         **training_params,
     )
@@ -243,9 +255,10 @@ def run(opt):
         CocoDataset(
             root_dir=os.path.join(opt.data_path, params.project_name),
             set=params.val_set,
-            transform=get_inference_transform(
+            transform=inference_transform(
                 input_sizes[opt.compound_coef], params.mean, params.std
             ),
+            is_albu_transform=use_albu,
         ),
         **val_params,
     )
@@ -348,10 +361,6 @@ def run(opt):
                         annot = annot.cuda()
 
                     optimizer.zero_grad()
-                    print("SHAAAAAAPEEEE???????????????????????")
-                    print(imgs.shape)
-                    print(annot.shape)
-                    print("SHAAAAAAPEEEE!!!!!!!!!!!!!!!!!!!!!!!")
 
                     cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
                     cls_loss = cls_loss.mean()

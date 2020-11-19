@@ -1,10 +1,9 @@
 import os
-from typing import Dict
 
 import torch
 import numpy as np
 
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from pycocotools.coco import COCO
 import cv2
 
@@ -20,6 +19,7 @@ class CocoDataset(Dataset):
         self.set_name = set
         self.transform = transform
         self.is_albu_transform = is_albu_transform
+        is_albu = is_albu_transform
 
         self.coco = COCO(
             os.path.join(
@@ -55,24 +55,24 @@ class CocoDataset(Dataset):
 
         if self.transform:
             if self.is_albu_transform:
+                # this is required by legacy code which not used correct coco xywh annotations but xyxy
+                sample["annot"][:, 2] = sample["annot"][:, 2] - sample["annot"][:, 0]
+                sample["annot"][:, 3] = sample["annot"][:, 3] - sample["annot"][:, 1]
+
                 transformation_result = self.transform(
-                    image=sample["img"], bboxes=sample["annot"][:, :4]
+                    image=sample["img"], bboxes=sample["annot"]
                 )
 
-                sample = {
-                    "img": torch.from_numpy(transformation_result["image"]).to(
-                        torch.float32
-                    ),
-                    "annot": torch.from_numpy(
-                        np.concatenate(
-                            [
-                                transformation_result["bboxes"],
-                                annot[:, 4].reshape(-1, 1),
-                            ],
-                            axis=1,
-                        )
-                    ),
-                }
+                img = torch.from_numpy(transformation_result["image"]).to(torch.float32)
+                annots = np.array(transformation_result["bboxes"])
+
+                # this is required by legacy code which not used correct coco xywh annotations but xyxy
+                if annots.size > 0:
+                    annots[:, 2] = annots[:, 0] + annots[:, 2]
+                    annots[:, 3] = annots[:, 1] + annots[:, 3]
+                annots = torch.from_numpy(annots)
+
+                sample = {"img": img, "annot": annots}
             else:
                 sample = self.transform(sample)
         return sample
@@ -113,9 +113,8 @@ class CocoDataset(Dataset):
             annotations = np.append(annotations, annotation, axis=0)
 
         # transform from [x, y, w, h] to [x1, y1, x2, y2]
-        if not self.is_albu_transform:
-            annotations[:, 2] = annotations[:, 0] + annotations[:, 2]
-            annotations[:, 3] = annotations[:, 1] + annotations[:, 3]
+        annotations[:, 2] = annotations[:, 0] + annotations[:, 2]
+        annotations[:, 3] = annotations[:, 1] + annotations[:, 3]
 
         return annotations
 
