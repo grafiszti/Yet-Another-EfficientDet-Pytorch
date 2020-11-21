@@ -187,10 +187,11 @@ def get_training_transform(
         [
             albu.Normalize(mean=mean, std=std),
             albu.Flip(),
-            albu.Blur(blur_limit=3, p=0.1),
-            albu.ShiftScaleRotate(p=0.5),
+            albu.ShiftScaleRotate(
+                shift_limit=0.0625, scale_limit=0.1, rotate_limit=180, p=0.5
+            ),
             albu.ColorJitter(
-                brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1, p=0.2
+                brightness=0.01, contrast=0.01, saturation=0.01, hue=0.01, p=0.2
             ),
             albu.PadIfNeeded(min_width=input_size, min_height=input_size),
             albu.Resize(width=input_size, height=input_size),
